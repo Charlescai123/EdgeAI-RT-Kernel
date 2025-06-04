@@ -60,7 +60,10 @@ echo "[INFO] Running cyclictest for $duration seconds..."
 cyclictest -l $((duration * 50000)) -m -Sp99 -i200 -h400 -q > output
 
 # ======== Step 3: Extract Max Latency ========
+echo "[INFO] Extracting latency statistics..."
 max=$(grep "Max Latencies" output | tr " " "\n" | sort -n | tail -1 | sed s/^0*//)
+min=$(grep "Min Latencies" output | tr " " "\n" | sort -n | grep -E '^[0-9]+$' | head -1 | sed s/^0*//)
+avg=$(grep "Avg Latencies" output | tr -cd '0-9 \n' | awk '{sum=0; for(i=1;i<=NF;i++) sum += $i+0; printf "%.0f\n", sum/NF}' | sed s/^0*//)
 
 # ======== Step 4: Format histogram data ========
 grep -v -e "^#" -e "^$" output | tr " " "\t" > histogram
@@ -71,15 +74,22 @@ for i in $(seq 1 $cores); do
     cut -f1,$column histogram > histogram$i
 done
 
+
 # ======== Step 6: Generate gnuplot command ========
+hostname=$(uname -n)
+kernel_version=$(uname -r)
+
 cat <<EOF > plotcmd
-set title "Latency Plot"
+set title "Latency on $hostname\\nKernel $kernel_version"
 set terminal png
-set xlabel "Latency (us), max $max us"
+set xlabel "Latency (us), min $min us, avg $avg us, max $max us"
 set logscale y
 set xrange [0:400]
 set yrange [0.8:*]
 set ylabel "Number of latency samples"
+set label "Min: $min us" at graph 0.02, graph 0.95
+set label "Avg: $avg us" at graph 0.02, graph 0.90
+set label "Max: $max us" at graph 0.02, graph 0.85
 set output "$output_file"
 plot \\
 EOF
@@ -89,6 +99,7 @@ for i in $(seq 1 $cores); do
     [[ $i -gt 1 ]] && echo -n ", " >> plotcmd
     echo -n "\"histogram$i\" using 1:2 title \"CPU$cpuno\" with histeps" >> plotcmd
 done
+
 
 # ======== Step 7: Plot and Cleanup ========
 echo "[INFO] Plotting result to $output_file..."
