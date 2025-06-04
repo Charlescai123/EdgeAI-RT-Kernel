@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # ======== Default Values ========
-cores=4
+cores=$(nproc)
 duration=10
+interrupted=false
 
 # ======== Parse Arguments ========
 while [[ $# -gt 0 ]]; do
@@ -21,6 +22,20 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# ======== Cleanup function for early exit ========
+cleanup() {
+    echo -e "\n[INFO] Cleaning up..."
+    killall stress &>/dev/null
+    rm -f histogram* output plotcmd
+    if [ "$interrupted" = true ]; then
+        echo "[INTERRUPTED] Script was terminated early. No plot generated."
+        exit 130
+    fi
+}
+
+# ======== Trap INT (Ctrl+C) and TERM ========
+trap 'interrupted=true; cleanup' INT TERM
 
 # ======== Dependency Check ========
 echo "[INFO] Checking dependencies..."
@@ -69,17 +84,15 @@ EOF
 
 for i in $(seq 1 $cores); do
     cpuno=$((i - 1))
-    [[ $i -gt 1 ]] && echo -n ", \\" >> plotcmd
-    echo "\"histogram$i\" using 1:2 title \"CPU$cpuno\" with histeps" >> plotcmd
+    [[ $i -gt 1 ]] && echo -n ", " >> plotcmd
+    echo -n "\"histogram$i\" using 1:2 title \"CPU$cpuno\" with histeps" >> plotcmd
 done
 
-# ======== Step 7: Plot and cleanup ========
+# ======== Step 7: Plot and Cleanup ========
 echo "[INFO] Plotting result to plot.png..."
 gnuplot -persist < plotcmd
 
-echo "[INFO] Cleaning up..."
-rm -f histogram* output plotcmd
-killall stress &>/dev/null
+cleanup  # Normal exit
 
 echo "[DONE] Test complete. Output saved to plot.png"
 
