@@ -1,50 +1,85 @@
-# 1.Let system under stress
-stress --cpu 4 --io 1 --vm 1  --vm-bytes 128M -d 1&
-# 2. Run cyclictest
-cyclictest -l500000 -m -Sp99 -i200 -h400 -q >output
-# 3. Get maximum latency
-max=`grep "Max Latencies" output | tr " " "\n" | sort -n |
-tail -1 | sed s/^0*//`
-# 4. Grep data lines, no empty lines a common field separator
-grep -v -e "^#" -e "^$" output | tr " " "\t" >histogram
-# 5. Set the number of cores, for example
+#!/bin/bash
+
+# ======== Default Values ========
 cores=4
-# 5. Create two-column data sets
-for i in `seq 1 $cores`
-do
-  column=`expr $i + 1`
-  cut -f1,$column histogram >histogram$i
+duration=10
+
+# ======== Parse Arguments ========
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --cores)
+            cores="$2"
+            shift 2
+            ;;
+        --duration)
+            duration="$2"
+            shift 2
+            ;;
+        *)
+            echo "[ERROR] Unknown argument: $1"
+            exit 1
+            ;;
+    esac
 done
-# 6. Create plot command header
-echo -n  "set title \"Latency plot\"\n\
-set terminal png\n\
-set xlabel \"Latency (us), max $max us\"\n\
-set logscale y\n\
-set xrange [0:400]\n\
-set yrange [0.8:*]\n\
-set ylabel \"Number of latency samples\"\n\
-set output \"plot.png\"\n\
-plot " >plotcmd
-# 7. Append plot command data references
-for i in `seq 1 $cores`
-do
-   if test $i != 1
-   then
-      echo -n ", " >>plotcmd
-   fi
-   cpuno=`expr $i - 1`
-   if test $cpuno -lt 10
-   then
-      title=" CPU$cpuno"
-   else
-      title="CPU$cpuno"
-   fi
-   echo -n "\"histogram$i\" using 1:2 title \"$title\" with histeps" >>plotcmd
-   done
-# 8. Execute plot command
-gnuplot -persist <plotcmd
-rm  histogram*
-rm output
-rm plotcmd
-killall stress
-echo finish
+
+# ======== Dependency Check ========
+echo "[INFO] Checking dependencies..."
+for pkg in stress rt-tests gnuplot; do
+    if ! dpkg -s "$pkg" &> /dev/null; then
+        echo "[WARN] $pkg not found. Installing..."
+        sudo apt update
+        sudo apt install -y "$pkg"
+    else
+        echo "[OK] $pkg is already installed."
+    fi
+done
+
+# ======== Step 1: Start stress load ========
+echo "[INFO] Starting stress with $cores CPU threads..."
+stress --cpu "$cores" --io 1 --vm 1 --vm-bytes 128M -d 1 &
+
+# ======== Step 2: Run cyclictest ========
+echo "[INFO] Running cyclictest for $duration seconds..."
+cyclictest -l $((duration * 50000)) -m -Sp99 -i200 -h400 -q > output
+
+# ======== Step 3: Extract Max Latency ========
+max=$(grep "Max Latencies" output | tr " " "\n" | sort -n | tail -1 | sed s/^0*//)
+
+# ======== Step 4: Format histogram data ========
+grep -v -e "^#" -e "^$" output | tr " " "\t" > histogram
+
+# ======== Step 5: Split histogram per core ========
+for i in $(seq 1 $cores); do
+    column=$((i + 1))
+    cut -f1,$column histogram > histogram$i
+done
+
+# ======== Step 6: Generate gnuplot command ========
+cat <<EOF > plotcmd
+set title "Latency Plot"
+set terminal png
+set xlabel "Latency (us), max $max us"
+set logscale y
+set xrange [0:400]
+set yrange [0.8:*]
+set ylabel "Number of latency samples"
+set output "plot.png"
+plot \\
+EOF
+
+for i in $(seq 1 $cores); do
+    cpuno=$((i - 1))
+    [[ $i -gt 1 ]] && echo -n ", \\" >> plotcmd
+    echo "\"histogram$i\" using 1:2 title \"CPU$cpuno\" with histeps" >> plotcmd
+done
+
+# ======== Step 7: Plot and cleanup ========
+echo "[INFO] Plotting result to plot.png..."
+gnuplot -persist < plotcmd
+
+echo "[INFO] Cleaning up..."
+rm -f histogram* output plotcmd
+killall stress &>/dev/null
+
+echo "[DONE] Test complete. Output saved to plot.png"
+
