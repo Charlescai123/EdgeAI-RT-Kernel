@@ -23,6 +23,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+output_file="plot_cpu_${cores}cores.png"
+
 # ======== Cleanup function for early exit ========
 cleanup() {
     echo -e "\n[INFO] Cleaning up..."
@@ -78,7 +80,7 @@ set logscale y
 set xrange [0:400]
 set yrange [0.8:*]
 set ylabel "Number of latency samples"
-set output "plot.png"
+set output "$output_file"
 plot \\
 EOF
 
@@ -89,10 +91,10 @@ for i in $(seq 1 $cores); do
 done
 
 # ======== Step 7: Plot and Cleanup ========
-echo "[INFO] Plotting result to plot.png..."
+echo "[INFO] Plotting result to $output_file..."
 gnuplot -persist < plotcmd
 
 cleanup  # Normal exit
 
-echo "[DONE] Test complete. Output saved to plot.png"
+echo "[DONE] Test complete. Output saved to $output_file"
 
