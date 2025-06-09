@@ -1,4 +1,4 @@
-# Ubuntu-RT-UP-Board
+# EdgeAI-RT-Kernel
 
 An [UP board](https://up-board.org/) Ubuntu **real-time** patched kernel (4.4.86).
 
