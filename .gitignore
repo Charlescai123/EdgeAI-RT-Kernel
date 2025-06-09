@@ -9,6 +9,9 @@
 #
 # Normal rules
 #
+
+.vscode
+
 .*
 *.o
 *.o.*
